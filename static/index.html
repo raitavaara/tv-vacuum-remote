@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TV + Vacuum</title>
+<style>
+  :root { --bg:#f4f4f2; --ink:#16181a; --line:#16181a; --card:#fff; --green:#1e8a49; --red:#be2a2a; --blue:#1a7a9d; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141517; --ink:#ececec; --line:#ececec; --card:#1d1f22; --green:#4dbd74; --red:#f86c6b; --blue:#63c2de; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.4 Helvetica, Arial, sans-serif; padding:16px; max-width:520px; margin-inline:auto; }
+  h1 { font-size:14px; letter-spacing:.12em; text-transform:uppercase; margin:8px 0 14px; }
+  section { background:var(--card); border:2px solid var(--line); padding:14px; margin-bottom:16px; }
+  h2 { margin:0 0 10px; font-size:13px; letter-spacing:.1em; text-transform:uppercase; display:flex; justify-content:space-between; }
+  .state { font-weight:bold; }
+  .on { color:var(--green); } .bad { color:var(--red); }
+  button { font:inherit; background:var(--card); color:var(--ink); border:2px solid var(--line); padding:12px 8px; cursor:pointer; min-height:48px; }
+  button:active { background:var(--ink); color:var(--bg); }
+  button:disabled { opacity:.4; }
+  .grid { display:grid; gap:8px; }
+  .dpad { grid-template-columns:repeat(3,1fr); }
+  .row3 { grid-template-columns:repeat(3,1fr); margin-top:8px; }
+  .row2 { grid-template-columns:repeat(2,1fr); margin-top:8px; }
+  .apps { grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); margin-top:8px; }
+  .power { border-color:var(--red); color:var(--red); }
+  .power.is-off { border-color:var(--green); color:var(--green); }
+  .note { margin-top:10px; padding:8px 10px; border:2px dashed var(--blue); font-size:14px; }
+  .note.fail { border-color:var(--red); color:var(--red); }
+  .bar { height:10px; border:2px solid var(--line); margin:8px 0; }
+  .bar i { display:block; height:100%; background:var(--green); }
+  .alerts div { border:2px solid var(--red); color:var(--red); padding:8px 10px; margin-bottom:8px; font-size:14px; }
+  #offline { display:none; border:2px dashed var(--red); color:var(--red); padding:8px 10px; margin-bottom:12px; text-align:center; }
+</style>
+</head>
+<body>
+<h1>Remote</h1>
+<div id="offline">Can't reach the server</div>
+<div class="alerts" id="alerts"></div>
+
+<section id="tvbox" hidden>
+  <h2><span id="tvname">TV</span><span class="state" id="tvstate"></span></h2>
+  <div class="grid row2" style="margin-top:0"><button id="tvpower" class="power"></button><button data-key="source">Source</button></div>
+  <div class="grid dpad" style="margin-top:8px">
+    <span></span><button data-key="up">▲</button><span></span>
+    <button data-key="left">◀</button><button data-key="ok">OK</button><button data-key="right">▶</button>
+    <span></span><button data-key="down">▼</button><span></span>
+  </div>
+  <div class="grid row3"><button data-key="back">Back</button><button data-key="home">Home</button><button data-key="mute">Mute</button></div>
+  <div class="grid row2"><button data-key="vol_down">Vol −</button><button data-key="vol_up">Vol +</button></div>
+  <div class="grid row3"><button data-key="rewind">⏪</button><button data-key="play">⏵</button><button data-key="ff">⏩</button></div>
+  <div class="grid apps" id="apps"></div>
+  <div id="tvnote"></div>
+</section>
+
+<section id="vacbox" hidden>
+  <h2><span id="vacname">Vacuum</span><span class="state" id="vacstate"></span></h2>
+  <div class="bar"><i id="vacbat" style="width:0"></i></div>
+  <div id="vacinfo" style="font-size:14px"></div>
+  <div class="grid row3">
+    <button data-vac="start" id="vstart">Start</button>
+    <button data-vac="pause" id="vpause">Pause</button>
+    <button data-vac="home">Home</button>
+  </div>
+  <div id="vacnote"></div>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+let st = {};
+
+async function post(url, body) {
+  const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || 'Failed');
+  if (j.tv || j.vacuum) render(j);
+  return j;
+}
+const note = (id, text, fail) => $(id).innerHTML = text ? `<div class="note ${fail ? 'fail' : ''}">${text}</div>` : '';
+
+function render(s) {
+  st = s;
+  const t = s.tv, v = s.vacuum;
+  $('tvbox').hidden = !t;
+  if (t) {
+    $('tvname').textContent = t.name;
+    $('tvstate').textContent = t.waking ? 'Turning on…' : t.on ? 'On' : t.state === 'standby' ? 'Standby' : 'Off';
+    $('tvstate').className = 'state ' + (t.on ? 'on' : '');
+    $('tvpower').textContent = t.on ? 'Power off' : 'Power on';
+    $('tvpower').classList.toggle('is-off', !t.on);
+    document.querySelectorAll('[data-key]').forEach(b => b.disabled = !t.on);
+    $('apps').innerHTML = (t.apps || []).map(a =>
+      `<button data-app="${a.id}" style="${a.bg ? `background:${a.bg};color:${a.fg || '#fff'};border-color:${a.bg}` : ''}">${a.name}</button>`).join('');
+    note('tvnote', t.wake_failed ? 'The TV did not turn on' : t.open_failed ? 'Could not open the app' :
+         t.waking ? `Turning on… ${t.wake_age}s${t.opening ? ' · will open ' + t.opening : ''}` : '', t.wake_failed || t.open_failed);
+  }
+  $('vacbox').hidden = !v;
+  if (v) {
+    $('vacname').textContent = v.name;
+    $('vacstate').textContent = v.connected ? v.status : 'Offline';
+    $('vacstate').className = 'state ' + (v.cleaning ? 'on' : v.error ? 'bad' : '');
+    $('vacbat').style.width = (v.battery || 0) + '%';
+    $('vacinfo').textContent = [v.battery != null ? v.battery + '%' : '', v.bin_full ? 'bin full' : '', v.error || ''].filter(Boolean).join(' · ');
+    $('vstart').textContent = v.paused ? 'Resume' : 'Start';
+    $('vstart').dataset.vac = v.paused ? 'resume' : 'start';
+    $('vpause').disabled = !v.cleaning;
+  }
+  $('alerts').innerHTML = (s.alerts || []).filter(a => Date.now() / 1000 - a.t < 3600).map(a => `<div>${a.text}</div>`).join('');
+}
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  try {
+    if (b.dataset.key) await post('/api/tv/key', {key: b.dataset.key});
+    else if (b.dataset.app) await post('/api/tv/app', {id: b.dataset.app});
+    else if (b.id === 'tvpower') await post('/api/tv/power', {on: !st.tv.on});
+    else if (b.dataset.vac) { note('vacnote', 'Sending…'); await post('/api/vacuum/' + b.dataset.vac); note('vacnote', ''); }
+  } catch (err) {
+    const box = b.closest('section').id === 'vacbox' ? 'vacnote' : 'tvnote';
+    note(box, err.message, true);
+  }
+});
+
+function live() {
+  const es = new EventSource('/api/events');
+  es.onmessage = m => { $('offline').style.display = 'none'; render(JSON.parse(m.data)); };
+  es.onerror = () => { $('offline').style.display = 'block'; };
+}
+fetch('/api/state').then(r => r.json()).then(render).catch(() => {});
+fetch('/api/vacuum-refresh', {method: 'POST'}).catch(() => {});   // ask the robot for fresh status when the page opens
+fetch('/api/tv/warm', {method: 'POST'}).catch(() => {});
+live();
+</script>
+</body>
+</html>

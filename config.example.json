@@ -1,0 +1,17 @@
+{
+  "tv": {
+    "driver": "samsung",
+    "name": "Living room TV",
+    "host": "192.168.1.50",
+    "mac": "aa:bb:cc:dd:ee:ff",
+    "apps": [
+      {"id": "111299001912", "name": "YouTube", "bg": "#ff0000", "fg": "#ffffff"},
+      {"id": "3201807016597", "name": "Apple TV", "bg": "#000000", "fg": "#ffffff"}
+    ]
+  },
+  "vacuum": {
+    "driver": "roomba",
+    "name": "Hoover",
+    "host": "192.168.1.51"
+  }
+}
